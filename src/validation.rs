@@ -25,7 +25,11 @@ pub fn validate_new_pokemon(mut input: NewPokemon) -> Result<NewPokemon, AppErro
         return Err(bad("base_experience no puede ser negativo"));
     }
 
-    input.types = input.types.iter().map(|t| t.trim().to_lowercase()).collect();
+    input.types = input
+        .types
+        .iter()
+        .map(|t| t.trim().to_lowercase())
+        .collect();
     if input.types.is_empty() || input.types.len() > 2 {
         return Err(bad("un pokemon debe tener 1 o 2 tipos"));
     }

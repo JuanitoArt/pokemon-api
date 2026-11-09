@@ -1,17 +1,18 @@
 use axum::{
+    Json,
     extract::{
-        rejection::{JsonRejection, QueryRejection},
         Path, Query, State,
+        rejection::{JsonRejection, QueryRejection},
     },
     http::StatusCode,
-    Json,
 };
 use sqlx::{PgConnection, PgPool};
 
 use crate::{
     error::AppError,
     models::{
-        AbilityRef, ListParams, NewPokemon, Page, Pokemon, PokemonDetail, StatRef, TypeItem, TypeRef,
+        AbilityRef, ListParams, NewPokemon, Page, Pokemon, PokemonDetail, StatRef, TypeItem,
+        TypeRef,
     },
     validation::validate_new_pokemon,
 };
@@ -44,7 +45,12 @@ async fn load_detail(pool: &PgPool, pokemon: Pokemon) -> Result<PokemonDetail, A
     .fetch_all(pool)
     .await?;
 
-    Ok(PokemonDetail { pokemon, types, abilities, stats })
+    Ok(PokemonDetail {
+        pokemon,
+        types,
+        abilities,
+        stats,
+    })
 }
 
 fn like_pattern(term: &str) -> String {
@@ -65,10 +71,14 @@ pub async fn list_pokemon(
     let offset = params.offset.unwrap_or(0);
 
     if !(1..=100).contains(&limit) {
-        return Err(AppError::BadRequest("limit debe estar entre 1 y 100".to_string()));
+        return Err(AppError::BadRequest(
+            "limit debe estar entre 1 y 100".to_string(),
+        ));
     }
     if offset < 0 {
-        return Err(AppError::BadRequest("offset no puede ser negativo".to_string()));
+        return Err(AppError::BadRequest(
+            "offset no puede ser negativo".to_string(),
+        ));
     }
 
     let name = params
@@ -111,7 +121,12 @@ pub async fn list_pokemon(
     .fetch_all(&pool)
     .await?;
 
-    Ok(Json(Page { data, total, limit, offset }))
+    Ok(Json(Page {
+        data,
+        total,
+        limit,
+        offset,
+    }))
 }
 
 pub async fn get_pokemon_by_id(
@@ -291,10 +306,11 @@ pub async fn update_pokemon(
     let Json(body) = payload.map_err(|e| AppError::BadRequest(e.body_text()))?;
     let input = validate_new_pokemon(body)?;
 
-    let found = sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM pokemon WHERE id = $1)")
-        .bind(id)
-        .fetch_one(&pool)
-        .await?;
+    let found =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM pokemon WHERE id = $1)")
+            .bind(id)
+            .fetch_one(&pool)
+            .await?;
 
     if !found {
         return Err(AppError::NotFound(format!("pokemon {id} no encontrado")));

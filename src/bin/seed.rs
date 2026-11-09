@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use serde::Deserialize;
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 
 #[derive(Deserialize)]
 struct Named {
@@ -207,10 +207,12 @@ async fn main() {
         }
     }
 
-    sqlx::query("SELECT setval(pg_get_serial_sequence('pokemon', 'id'), (SELECT MAX(id) FROM pokemon))")
-        .execute(&pool)
-        .await
-        .expect("no se pudo ajustar la secuencia");
+    sqlx::query(
+        "SELECT setval(pg_get_serial_sequence('pokemon', 'id'), (SELECT MAX(id) FROM pokemon))",
+    )
+    .execute(&pool)
+    .await
+    .expect("no se pudo ajustar la secuencia");
 
     println!("guardados: {saved}, fallidos: {}", failed.len());
     if !failed.is_empty() {

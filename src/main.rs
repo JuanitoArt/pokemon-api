@@ -3,8 +3,8 @@ mod handlers;
 mod models;
 mod validation;
 
-use axum::{extract::State, http::StatusCode, routing::get, Router};
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use axum::{Router, extract::State, http::StatusCode, routing::get};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 
 async fn health(State(pool): State<PgPool>) -> Result<&'static str, StatusCode> {
     sqlx::query("SELECT 1")
@@ -29,7 +29,10 @@ async fn main() {
 
     let app = Router::new()
         .route("/health", get(health))
-        .route("/pokemon", get(handlers::list_pokemon).post(handlers::create_pokemon))
+        .route(
+            "/pokemon",
+            get(handlers::list_pokemon).post(handlers::create_pokemon),
+        )
         .route(
             "/pokemon/{id}",
             get(handlers::get_pokemon_by_id)
