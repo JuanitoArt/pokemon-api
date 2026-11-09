@@ -30,7 +30,12 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health))
         .route("/pokemon", get(handlers::list_pokemon).post(handlers::create_pokemon))
-        .route("/pokemon/{id}", get(handlers::get_pokemon_by_id))
+        .route(
+            "/pokemon/{id}",
+            get(handlers::get_pokemon_by_id)
+                .put(handlers::update_pokemon)
+                .delete(handlers::delete_pokemon),
+        )
         .route("/pokemon/name/{name}", get(handlers::get_pokemon_by_name))
         .route("/types", get(handlers::list_types))
         .route("/types/{id}/pokemon", get(handlers::list_pokemon_by_type))

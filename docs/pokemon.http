@@ -1,3 +1,4 @@
+@id = 9
 ### Crear pokemon (debe dar 201)
 POST http://localhost:3000/pokemon
 Content-Type: application/json
@@ -63,3 +64,41 @@ GET http://localhost:3000/types
 
 ### Pokemon de tipo grass (id 2)
 GET http://localhost:3000/types/2/pokemon
+
+
+
+### Actualizar ivysaur (debe dar 200)
+PUT http://localhost:3000/pokemon/{{id}}
+Content-Type: application/json
+
+{
+  "name": "Ivysaur",
+  "height": 11,
+  "weight": 131,
+  "types": ["grass"],
+  "stats": [{ "name": "hp", "base_value": 61 }]
+}
+
+### Actualizar un pokemon que no existe (debe dar 404)
+PUT http://localhost:3000/pokemon/999
+Content-Type: application/json
+
+{ "name": "x", "height": 1, "weight": 1, "types": ["grass"] }
+
+### Ponerle el nombre de otro (debe dar 409)
+PUT http://localhost:3000/pokemon/{{id}}
+Content-Type: application/json
+
+{ "name": "Pikachu", "height": 1, "weight": 1, "types": ["grass"] }
+
+### Tipo que no existe (debe dar 400 y no cambiar nada)
+PUT http://localhost:3000/pokemon/{{id}}
+Content-Type: application/json
+
+{ "name": "ivysaur", "height": 99, "weight": 1, "types": ["noexiste"] }
+
+### Borrar (debe dar 204)
+DELETE http://localhost:3000/pokemon/{{id}}
+
+### Borrar otra vez (debe dar 404)
+DELETE http://localhost:3000/pokemon/{{id}}

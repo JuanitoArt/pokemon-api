@@ -3,7 +3,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 
 use crate::{
     error::AppError,
@@ -118,6 +118,66 @@ pub async fn list_pokemon_by_type(
     Ok(Json(rows))
 }
 
+async fn insert_relations(
+    conn: &mut PgConnection,
+    pokemon_id: i32,
+    input: &NewPokemon,
+) -> Result<(), AppError> {
+    for (index, type_name) in input.types.iter().enumerate() {
+        let type_id = sqlx::query_scalar::<_, i32>("SELECT id FROM types WHERE name = $1")
+            .bind(type_name)
+            .fetch_optional(&mut *conn)
+            .await?
+            .ok_or_else(|| AppError::BadRequest(format!("el tipo '{type_name}' no existe")))?;
+
+        sqlx::query("INSERT INTO pokemon_types (pokemon_id, type_id, slot) VALUES ($1, $2, $3)")
+            .bind(pokemon_id)
+            .bind(type_id)
+            .bind(index as i32 + 1)
+            .execute(&mut *conn)
+            .await?;
+    }
+
+    for ability in &input.abilities {
+        let ability_id = sqlx::query_scalar::<_, i32>(
+            "INSERT INTO abilities (name) VALUES ($1)
+             ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+             RETURNING id",
+        )
+        .bind(&ability.name)
+        .fetch_one(&mut *conn)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO pokemon_abilities (pokemon_id, ability_id, is_hidden) VALUES ($1, $2, $3)",
+        )
+        .bind(pokemon_id)
+        .bind(ability_id)
+        .bind(ability.is_hidden)
+        .execute(&mut *conn)
+        .await?;
+    }
+
+    for stat in &input.stats {
+        let stat_id = sqlx::query_scalar::<_, i32>("SELECT id FROM stat_types WHERE name = $1")
+            .bind(&stat.name)
+            .fetch_optional(&mut *conn)
+            .await?
+            .ok_or_else(|| AppError::BadRequest(format!("el stat '{}' no existe", stat.name)))?;
+
+        sqlx::query(
+            "INSERT INTO pokemon_stats (pokemon_id, stat_type_id, base_value) VALUES ($1, $2, $3)",
+        )
+        .bind(pokemon_id)
+        .bind(stat_id)
+        .bind(stat.base_value)
+        .execute(&mut *conn)
+        .await?;
+    }
+
+    Ok(())
+}
+
 pub async fn create_pokemon(
     State(pool): State<PgPool>,
     payload: Result<Json<NewPokemon>, JsonRejection>,
@@ -154,60 +214,96 @@ pub async fn create_pokemon(
     .fetch_one(&mut *tx)
     .await?;
 
-    for (index, type_name) in input.types.iter().enumerate() {
-        let type_id = sqlx::query_scalar::<_, i32>("SELECT id FROM types WHERE name = $1")
-            .bind(type_name)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| AppError::BadRequest(format!("el tipo '{type_name}' no existe")))?;
-
-        sqlx::query("INSERT INTO pokemon_types (pokemon_id, type_id, slot) VALUES ($1, $2, $3)")
-            .bind(pokemon.id)
-            .bind(type_id)
-            .bind(index as i32 + 1)
-            .execute(&mut *tx)
-            .await?;
-    }
-
-    for ability in &input.abilities {
-        let ability_id = sqlx::query_scalar::<_, i32>(
-            "INSERT INTO abilities (name) VALUES ($1)
-             ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-             RETURNING id",
-        )
-        .bind(&ability.name)
-        .fetch_one(&mut *tx)
-        .await?;
-
-        sqlx::query(
-            "INSERT INTO pokemon_abilities (pokemon_id, ability_id, is_hidden) VALUES ($1, $2, $3)",
-        )
-        .bind(pokemon.id)
-        .bind(ability_id)
-        .bind(ability.is_hidden)
-        .execute(&mut *tx)
-        .await?;
-    }
-
-    for stat in &input.stats {
-        let stat_id = sqlx::query_scalar::<_, i32>("SELECT id FROM stat_types WHERE name = $1")
-            .bind(&stat.name)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| AppError::BadRequest(format!("el stat '{}' no existe", stat.name)))?;
-
-        sqlx::query(
-            "INSERT INTO pokemon_stats (pokemon_id, stat_type_id, base_value) VALUES ($1, $2, $3)",
-        )
-        .bind(pokemon.id)
-        .bind(stat_id)
-        .bind(stat.base_value)
-        .execute(&mut *tx)
-        .await?;
-    }
+    insert_relations(&mut tx, pokemon.id, &input).await?;
 
     tx.commit().await?;
 
     let detail = load_detail(&pool, pokemon).await?;
     Ok((StatusCode::CREATED, Json(detail)))
+}
+
+pub async fn update_pokemon(
+    State(pool): State<PgPool>,
+    Path(id): Path<i32>,
+    payload: Result<Json<NewPokemon>, JsonRejection>,
+) -> Result<Json<PokemonDetail>, AppError> {
+    let Json(body) = payload.map_err(|e| AppError::BadRequest(e.body_text()))?;
+    let input = validate_new_pokemon(body)?;
+
+    let found = sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM pokemon WHERE id = $1)")
+        .bind(id)
+        .fetch_one(&pool)
+        .await?;
+
+    if !found {
+        return Err(AppError::NotFound(format!("pokemon {id} no encontrado")));
+    }
+
+    let taken = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM pokemon WHERE LOWER(name) = $1 AND id <> $2)",
+    )
+    .bind(&input.name)
+    .bind(id)
+    .fetch_one(&pool)
+    .await?;
+
+    if taken {
+        return Err(AppError::Conflict(format!(
+            "ya existe un pokemon llamado '{}'",
+            input.name
+        )));
+    }
+
+    let mut tx = pool.begin().await?;
+
+    let pokemon = sqlx::query_as::<_, Pokemon>(
+        "UPDATE pokemon
+         SET name = $1, height = $2, weight = $3, base_experience = $4,
+             sprite_url = $5, updated_at = now()
+         WHERE id = $6
+         RETURNING id, name, height, weight, base_experience, sprite_url",
+    )
+    .bind(&input.name)
+    .bind(input.height)
+    .bind(input.weight)
+    .bind(input.base_experience)
+    .bind(&input.sprite_url)
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM pokemon_types WHERE pokemon_id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM pokemon_abilities WHERE pokemon_id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM pokemon_stats WHERE pokemon_id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+    insert_relations(&mut tx, id, &input).await?;
+
+    tx.commit().await?;
+
+    Ok(Json(load_detail(&pool, pokemon).await?))
+}
+
+pub async fn delete_pokemon(
+    State(pool): State<PgPool>,
+    Path(id): Path<i32>,
+) -> Result<StatusCode, AppError> {
+    let result = sqlx::query("DELETE FROM pokemon WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!("pokemon {id} no encontrado")));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
 }
