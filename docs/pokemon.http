@@ -1,0 +1,65 @@
+### Crear pokemon (debe dar 201)
+POST http://localhost:3000/pokemon
+Content-Type: application/json
+
+{
+  "name": "Ivysaur",
+  "height": 10,
+  "weight": 130,
+  "base_experience": 142,
+  "types": ["grass", "poison"],
+  "abilities": [
+    { "name": "overgrow" },
+    { "name": "chlorophyll", "is_hidden": true }
+  ],
+  "stats": [
+    { "name": "hp", "base_value": 60 },
+    { "name": "attack", "base_value": 62 },
+    { "name": "defense", "base_value": 63 },
+    { "name": "special-attack", "base_value": 80 },
+    { "name": "special-defense", "base_value": 80 },
+    { "name": "speed", "base_value": 60 }
+  ]
+}
+
+### Altura negativa (debe dar 400)
+POST http://localhost:3000/pokemon
+Content-Type: application/json
+
+{
+  "name": "testmon",
+  "height": -5,
+  "weight": 10,
+  "types": ["grass"]
+}
+
+### Tipo que no existe (debe dar 400 y no dejar nada guardado)
+POST http://localhost:3000/pokemon
+Content-Type: application/json
+
+{
+  "name": "testmon",
+  "height": 5,
+  "weight": 10,
+  "types": ["grass", "noexiste"]
+}
+
+### Body incompleto (debe dar 400 en formato JSON)
+POST http://localhost:3000/pokemon
+Content-Type: application/json
+
+{
+  "name": "testmon"
+}
+
+### Listar pokemon (sin testmon)
+GET http://localhost:3000/pokemon
+
+### Ver ivysaur por nombre
+GET http://localhost:3000/pokemon/name/ivysaur
+
+### Listar tipos
+GET http://localhost:3000/types
+
+### Pokemon de tipo grass (id 2)
+GET http://localhost:3000/types/2/pokemon
