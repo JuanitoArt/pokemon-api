@@ -102,3 +102,27 @@ DELETE http://localhost:3000/pokemon/{{id}}
 
 ### Borrar otra vez (debe dar 404)
 DELETE http://localhost:3000/pokemon/{{id}}
+
+
+
+
+### Primera página (20 resultados)
+GET http://localhost:3000/pokemon
+
+### Segunda página de 5
+GET http://localhost:3000/pokemon?limit=5&offset=5
+
+### Buscar por nombre
+GET http://localhost:3000/pokemon?name=char
+
+### Filtrar por tipo
+GET http://localhost:3000/pokemon?type=fire
+
+### Combinar filtros
+GET http://localhost:3000/pokemon?type=fire&name=char
+
+### limit inválido (debe dar 400)
+GET http://localhost:3000/pokemon?limit=500
+
+### limit no numérico (debe dar 400)
+GET http://localhost:3000/pokemon?limit=abc

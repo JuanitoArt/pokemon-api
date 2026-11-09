@@ -1,5 +1,8 @@
 use axum::{
-    extract::{rejection::JsonRejection, Path, State},
+    extract::{
+        rejection::{JsonRejection, QueryRejection},
+        Path, Query, State,
+    },
     http::StatusCode,
     Json,
 };
@@ -7,7 +10,9 @@ use sqlx::{PgConnection, PgPool};
 
 use crate::{
     error::AppError,
-    models::{AbilityRef, NewPokemon, Pokemon, PokemonDetail, StatRef, TypeItem, TypeRef},
+    models::{
+        AbilityRef, ListParams, NewPokemon, Page, Pokemon, PokemonDetail, StatRef, TypeItem, TypeRef,
+    },
     validation::validate_new_pokemon,
 };
 
@@ -42,15 +47,71 @@ async fn load_detail(pool: &PgPool, pokemon: Pokemon) -> Result<PokemonDetail, A
     Ok(PokemonDetail { pokemon, types, abilities, stats })
 }
 
-pub async fn list_pokemon(State(pool): State<PgPool>) -> Result<Json<Vec<Pokemon>>, AppError> {
-    let rows = sqlx::query_as::<_, Pokemon>(
-        "SELECT id, name, height, weight, base_experience, sprite_url
-         FROM pokemon ORDER BY id",
+fn like_pattern(term: &str) -> String {
+    let escaped = term
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    format!("%{escaped}%")
+}
+
+pub async fn list_pokemon(
+    State(pool): State<PgPool>,
+    params: Result<Query<ListParams>, QueryRejection>,
+) -> Result<Json<Page<Pokemon>>, AppError> {
+    let Query(params) = params.map_err(|e| AppError::BadRequest(e.body_text()))?;
+
+    let limit = params.limit.unwrap_or(20);
+    let offset = params.offset.unwrap_or(0);
+
+    if !(1..=100).contains(&limit) {
+        return Err(AppError::BadRequest("limit debe estar entre 1 y 100".to_string()));
+    }
+    if offset < 0 {
+        return Err(AppError::BadRequest("offset no puede ser negativo".to_string()));
+    }
+
+    let name = params
+        .name
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty())
+        .map(|n| like_pattern(&n));
+
+    let type_name = params
+        .type_name
+        .map(|t| t.trim().to_lowercase())
+        .filter(|t| !t.is_empty());
+
+    let total = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM pokemon p
+         WHERE ($1::text IS NULL OR p.name ILIKE $1)
+           AND ($2::text IS NULL OR EXISTS (
+               SELECT 1 FROM pokemon_types pt JOIN types t ON t.id = pt.type_id
+               WHERE pt.pokemon_id = p.id AND t.name = $2))",
     )
+    .bind(&name)
+    .bind(&type_name)
+    .fetch_one(&pool)
+    .await?;
+
+    let data = sqlx::query_as::<_, Pokemon>(
+        "SELECT p.id, p.name, p.height, p.weight, p.base_experience, p.sprite_url
+         FROM pokemon p
+         WHERE ($1::text IS NULL OR p.name ILIKE $1)
+           AND ($2::text IS NULL OR EXISTS (
+               SELECT 1 FROM pokemon_types pt JOIN types t ON t.id = pt.type_id
+               WHERE pt.pokemon_id = p.id AND t.name = $2))
+         ORDER BY p.id
+         LIMIT $3 OFFSET $4",
+    )
+    .bind(&name)
+    .bind(&type_name)
+    .bind(limit)
+    .bind(offset)
     .fetch_all(&pool)
     .await?;
 
-    Ok(Json(rows))
+    Ok(Json(Page { data, total, limit, offset }))
 }
 
 pub async fn get_pokemon_by_id(

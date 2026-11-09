@@ -72,3 +72,20 @@ pub struct NewPokemon {
     #[serde(default)]
     pub stats: Vec<NewStat>,
 }
+
+#[derive(Deserialize)]
+pub struct ListParams {
+    pub name: Option<String>,
+    #[serde(rename = "type")]
+    pub type_name: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct Page<T> {
+    pub data: Vec<T>,
+    pub total: i64,
+    pub limit: i64,
+    pub offset: i64,
+}
